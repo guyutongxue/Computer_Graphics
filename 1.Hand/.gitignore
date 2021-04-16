@@ -1,0 +1,11 @@
+# VS Code default build dir
+/build
+# CLion default build dir
+/cmake-build-debug 
+
+# User profiles
+.vscode
+.idea
+
+# Trashes
+.DS_Store
