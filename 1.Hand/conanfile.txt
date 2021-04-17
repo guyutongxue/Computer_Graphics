@@ -10,6 +10,8 @@ cmake
 
 
 [options]
+# disable all features except FBX importer
+# make linking faster
 assimp:with_3d=False
 assimp:with_3ds=False
 assimp:with_3ds_exporter=False

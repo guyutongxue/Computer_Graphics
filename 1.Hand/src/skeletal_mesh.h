@@ -43,7 +43,7 @@
 
 #define SCENE_RESOURCE_BONE_PER_VERTEX 4
 
-typedef std::map<std::string, glm::fmat4> SkeletonModifier;
+using SkeletonModifier = std::map<std::string, glm::fmat4>;
 
 struct ParametricVertex {
     float position[3];
