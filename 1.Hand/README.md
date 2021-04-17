@@ -2,11 +2,13 @@
 
 ## Build Instruction
 
+Because some C++20 feature is used, only GCC 10 may compile this project.
+
 ```sh
 mkdir build
 cd build
 conan install .. -b missing # add `-pr ../conan_mingw_profile.txt` for MinGW Building
-cmake ..
+cmake .. # add `-G"MinGW Makefiles"` for MinGW Building
 ```
 
 ## Using instruction
