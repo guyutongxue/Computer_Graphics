@@ -1,0 +1,9 @@
+[settings]
+arch=x86_64
+arch_build=x86_64
+compiler=gcc
+compiler.version=10
+compiler.libcxx=libstdc++11
+os=Windows
+os_build=Windows
+build_type=Debug
