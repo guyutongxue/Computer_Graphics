@@ -5,6 +5,7 @@ add_executable(main
     camera.cpp
     shader.h
     shader.cpp
+    light.hpp
     # imgui backends
     imgui/imgui_impl_glfw.h
     imgui/imgui_impl_glfw.cpp
