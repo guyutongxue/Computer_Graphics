@@ -37,8 +37,7 @@ uniform mat4 model;
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 
-void main()
-{
+void main() {
     vs_out.FragPos = vec3(model * vec4(aPos, 1.0));   
     vs_out.TexCoords = aTexCoords;
     

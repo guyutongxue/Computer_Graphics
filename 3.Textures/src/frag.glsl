@@ -32,8 +32,7 @@ uniform sampler2D normalMap;
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 
-void main()
-{           
+void main() {           
      // obtain normal from normal map in range [0,1]
     vec3 normal = texture(normalMap, fs_in.TexCoords).rgb;
     // transform normal vector to range [-1,1]

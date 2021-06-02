@@ -30,19 +30,24 @@
 #include "shader.h"
 #include "light.hpp"
 
+#include <imgui.h>
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+static void error_callback(int error, const char* description);
 void processInput(GLFWwindow* window);
 unsigned int loadTexture(const char* path);
 void renderQuad();
 
 // settings
 constexpr const unsigned int SCR_WIDTH{800};
-constexpr const unsigned int SCR_HEIGHT{600};
+constexpr const unsigned int SCR_HEIGHT{800};
 
 // camera
-Camera camera({0.0f, 0.0f, 3.0f});
+Camera camera({0.0f, 0.0f, 5.0f});
 float lastX{SCR_WIDTH / 2.0f};
 float lastY{SCR_HEIGHT / 2.0f};
 bool firstMouse{true};
@@ -52,8 +57,10 @@ float deltaTime{0.0f};
 float lastFrame{0.0f};
 
 int main() {
+    glfwSetErrorCallback(error_callback);
+
     // glfw: initialize and configure
-    glfwInit();
+    if (!glfwInit()) exit(EXIT_FAILURE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -63,13 +70,15 @@ int main() {
 #endif
 
     // glfw window creation
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
-    if (window == NULL) {
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Textures", nullptr, nullptr);
+    if (!window) {
         std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
-        return -1;
+        exit(EXIT_FAILURE);
     }
+
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(0);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
@@ -82,6 +91,15 @@ int main() {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
+
+    // ImGui Initialization
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io{ImGui::GetIO()};
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    ImGui::StyleColorsClassic();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init();
 
     // configure global opengl state
     glEnable(GL_DEPTH_TEST);
@@ -101,11 +119,22 @@ int main() {
     shader.setUniform("normalMap", 1);
 
     // lighting info
-    glm::vec3 lightPos(0.5f, 1.0f, 0.3f);
+    glm::vec3 lightPos(1.5f, 1.5f, 1.5f);
     Light light(lightPos, 5.f);
 
     // render loop
     while (!glfwWindowShouldClose(window)) {
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Light control");
+        if (ImGui::SliderFloat3("Position", reinterpret_cast<float*>(&lightPos), -7.0f, 7.0f)) {
+            light.setPos(lightPos);
+        }
+        ImGui::End();
+        ImGui::Render();
+
         // per-frame time logic
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
@@ -142,14 +171,60 @@ int main() {
         light.setMvp(projection * view);
         light.draw();
 
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     glfwTerminate();
-    return 0;
 }
+
+class Triangle {
+private:
+    glm::vec3 a, b, c;
+    glm::vec2 uva, uvb, uvc;
+    glm::vec3 nm;
+    glm::vec3 tangent, bitangent;
+
+public:
+    Triangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec2 uva, glm::vec2 uvb, glm::vec2 uvc)
+        : a{a}, b{b}, c{c}, uva{uva}, uvb{uvb}, uvc{uvc} {
+        glm::vec3 edge1 = b - a;
+        glm::vec3 edge2 = c - a;
+        nm = glm::normalize(glm::cross(edge1, edge2));
+        glm::vec2 deltaUv1 = uvb - uva;
+        glm::vec2 deltaUv2 = uvc - uva;
+        float f = 1.0f / (deltaUv1.x * deltaUv2.y - deltaUv2.x * deltaUv1.y);
+
+        tangent.x = f * (deltaUv2.y * edge1.x - deltaUv1.y * edge2.x);
+        tangent.y = f * (deltaUv2.y * edge1.y - deltaUv1.y * edge2.y);
+        tangent.z = f * (deltaUv2.y * edge1.z - deltaUv1.y * edge2.z);
+
+        bitangent.x = f * (-deltaUv2.x * edge1.x + deltaUv1.x * edge2.x);
+        bitangent.y = f * (-deltaUv2.x * edge1.y + deltaUv1.x * edge2.y);
+        bitangent.z = f * (-deltaUv2.x * edge1.z + deltaUv1.x * edge2.z);
+    }
+
+    struct Vertex {
+        glm::vec3 pos;
+        glm::vec3 norm;
+        glm::vec2 texCoord;
+        glm::vec3 tangent, bitangent;
+    };
+
+    static_assert(sizeof(Vertex) == sizeof(float) * 14);
+
+    operator std::array<Vertex, 3>() {
+        return {{{a, nm, uva, tangent, bitangent},
+                 {b, nm, uvb, tangent, bitangent},
+                 {c, nm, uvc, tangent, bitangent}}};
+    }
+};
 
 // renders a 1x1 quad in NDC with manually calculated tangent vectors
 unsigned int quadVAO = 0;
@@ -157,66 +232,34 @@ unsigned int quadVBO;
 void renderQuad() {
     if (quadVAO == 0) {
         // positions
-        glm::vec3 pos1(-1.0f, 1.0f, 0.0f);
-        glm::vec3 pos2(-1.0f, -1.0f, 0.0f);
-        glm::vec3 pos3(1.0f, -1.0f, 0.0f);
-        glm::vec3 pos4(1.0f, 1.0f, 0.0f);
+        glm::vec3 pos1(-1.0f, 1.0f, 1.0f);
+        glm::vec3 pos2(-1.0f, -1.0f, 1.0f);
+        glm::vec3 pos3(1.0f, -1.0f, 1.0f);
+        glm::vec3 pos4(1.0f, 1.0f, 1.0f);
+        glm::vec3 pos5(-1.0f, 1.0f, -1.0f);
+        glm::vec3 pos6(-1.0f, -1.0f, -1.0f);
+        glm::vec3 pos7(1.0f, -1.0f, -1.0f);
+        glm::vec3 pos8(1.0f, 1.0f, -1.0f);
         // texture coordinates
         glm::vec2 uv1(0.0f, 1.0f);
         glm::vec2 uv2(0.0f, 0.0f);
         glm::vec2 uv3(1.0f, 0.0f);
         glm::vec2 uv4(1.0f, 1.0f);
-        // normal vector
-        glm::vec3 nm(0.0f, 0.0f, 1.0f);
 
-        // calculate tangent/bitangent vectors of both triangles
-        glm::vec3 tangent1, bitangent1;
-        glm::vec3 tangent2, bitangent2;
-
-        // triangle 1
-        glm::vec3 edge1 = pos2 - pos1;
-        glm::vec3 edge2 = pos3 - pos1;
-        glm::vec2 deltaUV1 = uv2 - uv1;
-        glm::vec2 deltaUV2 = uv3 - uv1;
-
-        float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
-
-        tangent1.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
-        tangent1.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
-        tangent1.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
-
-        bitangent1.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
-        bitangent1.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
-        bitangent1.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
-
-        // triangle 2
-        edge1 = pos3 - pos1;
-        edge2 = pos4 - pos1;
-        deltaUV1 = uv3 - uv1;
-        deltaUV2 = uv4 - uv1;
-
-        f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
-
-        tangent2.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
-        tangent2.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
-        tangent2.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
-
-        bitangent2.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
-        bitangent2.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
-        bitangent2.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
-
-        // clang-format off
-        float quadVertices[6 * 14] = {
-            // positions            // normal         // texcoords  // tangent                          // bitangent
-            pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
-            pos2.x, pos2.y, pos2.z, nm.x, nm.y, nm.z, uv2.x, uv2.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
-            pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
-
-            pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
-            pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
-            pos4.x, pos4.y, pos4.z, nm.x, nm.y, nm.z, uv4.x, uv4.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z
-        };
-        // clang-format on
+        Triangle q1a{pos1, pos2, pos3, uv1, uv2, uv3};
+        Triangle q1b{pos1, pos3, pos4, uv1, uv3, uv4};
+        Triangle q2a{pos1, pos4, pos8, uv1, uv2, uv3};
+        Triangle q2b{pos1, pos8, pos5, uv1, uv3, uv4};
+        Triangle q3a{pos8, pos7, pos6, uv1, uv2, uv3};
+        Triangle q3b{pos8, pos6, pos5, uv1, uv3, uv4};
+        Triangle q4a{pos3, pos2, pos6, uv1, uv2, uv3};
+        Triangle q4b{pos3, pos6, pos7, uv1, uv3, uv4};
+        Triangle q5a{pos8, pos4, pos3, uv1, uv2, uv3};
+        Triangle q5b{pos8, pos3, pos7, uv1, uv3, uv4};
+        Triangle q6a{pos1, pos5, pos6, uv1, uv2, uv3};
+        Triangle q6b{pos1, pos6, pos2, uv1, uv3, uv4};
+        std::array<std::array<Triangle::Vertex, 3>, 12> quadVertices{q1a, q1b, q2a, q2b, q3a, q3b,
+                                                                     q4a, q4b, q5a, q5b, q6a, q6b};
 
         // configure plane VAO
         glGenVertexArrays(1, &quadVAO);
@@ -225,29 +268,34 @@ void renderQuad() {
         glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Triangle::Vertex),
+                              (void*)(offsetof(Triangle::Vertex, pos)));
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float),
-                              (void*)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Triangle::Vertex),
+                              (void*)(offsetof(Triangle::Vertex, norm)));
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float),
-                              (void*)(6 * sizeof(float)));
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Triangle::Vertex),
+                              (void*)(offsetof(Triangle::Vertex, texCoord)));
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float),
-                              (void*)(8 * sizeof(float)));
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Triangle::Vertex),
+                              (void*)(offsetof(Triangle::Vertex, tangent)));
         glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float),
-                              (void*)(11 * sizeof(float)));
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Triangle::Vertex),
+                              (void*)(offsetof(Triangle::Vertex, bitangent)));
     }
     glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 3 * 12);
     glBindVertexArray(0);
 }
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame and react
-// accordingly
 void processInput(GLFWwindow* window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(window, true);
+    if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.processKeyboard(CamMove::Forward, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -262,15 +310,18 @@ void processInput(GLFWwindow* window) {
         camera.processKeyboard(CamMove::Down, deltaTime);
 }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     // make sure the viewport matches the new window dimensions; note that width and
     // height will be significantly larger than specified on retina displays.
     glViewport(0, 0, width, height);
 }
 
-// glfw: whenever the mouse moves, this callback is called
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+        firstMouse = true;
+        return;
+    }
     if (firstMouse) {
         lastX = xpos;
         lastY = ypos;
@@ -286,9 +337,15 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     camera.processMouseMovement(xoffset, yoffset);
 }
 
-// glfw: whenever the mouse scroll wheel scrolls, this callback is called
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+        glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS)
+        return;
     camera.processMouseScroll(yoffset);
+}
+
+static void error_callback(int error, const char* description) {
+    std::cerr << "Error: " << description << "\n";
 }
 
 // utility function for loading a 2D texture from file
@@ -313,9 +370,7 @@ unsigned int loadTexture(const char* path) {
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
                         format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-        // for this tutorial: use GL_CLAMP_TO_EDGE to prevent
-        // semi-transparent borders. Due to interpolation it
-        // takes texels from next repeat
+        // use GL_CLAMP_TO_EDGE to prevent semi-transparent borders.
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
                         format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
