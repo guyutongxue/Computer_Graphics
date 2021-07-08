@@ -11,3 +11,11 @@ mkdir build
 cd build
 conan install .. -b missing # add `-pr ../mingw.txt` for MinGW Building
 cmake .. # add `-G"MinGW Makefiles"` for MinGW Building
+make # `mingw32-make` for MinGW building
+```
+
+## Using Instruction
+
+- Use <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>Space</kbd> <kbd>Shift</kbd> to move camera.
+- Press <kbd>Alt</kbd> to unlock cursor.
+- Use ImGui to control light and reflectivity.
